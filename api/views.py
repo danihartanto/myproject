@@ -14,6 +14,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import CustomTokenObtainPairSerializer
 from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 # class CustomLoginView(TokenObtainPairView):
 #     serializer_class = CustomTokenObtainPairSerializer
@@ -119,4 +128,56 @@ class UpdateProfileView(generics.UpdateAPIView):
         return Response({
             "message": "Profil berhasil diperbarui.",
             "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            return Response({
+                "message": "Logout berhasil.",
+                "code": 200
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                "message": "Logout gagal.",
+                "code": 400,
+                "detail": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+
+        # Validasi old_password
+        if not user.check_password(old_password):
+            return Response({
+                "message": "Password lama salah.",
+                "code": 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validasi new_password tidak kosong
+        if not new_password:
+            return Response({
+                "message": "Password baru tidak boleh kosong.",
+                "code": 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ganti password
+        user.set_password(new_password)
+        user.save()
+
+        return Response({
+            "message": "Password berhasil diubah.",
+            "code": 200
         }, status=status.HTTP_200_OK)
