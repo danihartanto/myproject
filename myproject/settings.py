@@ -39,8 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
-    'api',
-    'rest_framework_simplejwt.token_blacklist',
+    'api', # folder api
+    'rest_framework_simplejwt.token_blacklist', #fitur logout
+    'drf_yasg', #fitur swagger
 ]
 
 MIDDLEWARE = [
@@ -95,10 +96,35 @@ AUTH_USER_MODEL = 'api.CustomUser'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-        
+        'api.authentication.CustomJWTAuthentication',
     ),
 }
+
+
+# tampilan swagger
+# SWAGGER_SETTINGS = {
+#     'SECURITY_DEFINITIONS': {
+#         'Bearer': {
+#             'type': 'apiKey',
+#             'description': 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer <token>"',
+#             'name': 'Authorization',
+#             'in': 'header'
+#         }
+#     },
+#     'USE_SESSION_AUTH': False,
+# }
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'Masukkan token access kamu di sini tanpa prefix. Prefix Bearer otomatis ditambahkan.'
+        }
+    },
+    'USE_SESSION_AUTH': False,
+}
+
 
 
 

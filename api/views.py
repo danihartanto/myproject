@@ -2,25 +2,22 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import CustomUser
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import RegisterSerializer, UserSerializer, ChangePasswordSerializer, UserListSerializer, UserSerializer
 from .serializers import UpdateUserSerializer
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.response import Response
-from rest_framework import status
-from .serializers import CustomTokenObtainPairSerializer
 from django.utils import timezone
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from django.contrib.auth import get_user_model
+
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from .permissions import IsAdminUser, IsSuperUser, CustomAdminOrReadOnly
 
 User = get_user_model()
 
@@ -55,7 +52,9 @@ User = get_user_model()
 
 #         return response
 
+
 class CustomLoginView(TokenObtainPairView):
+    
     serializer_class = CustomTokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):
@@ -91,7 +90,7 @@ class RegisterView(generics.CreateAPIView):
         }, status=status.HTTP_201_CREATED)
 
 class ProfileView(generics.RetrieveAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated] # autentikasi untuk tiap request menggunakan token
     serializer_class = UserSerializer
 
     def get_object(self):
@@ -113,7 +112,7 @@ def get_tokens_for_user(user):
 
 
 class UpdateProfileView(generics.UpdateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated] # autentikasi untuk tiap request menggunakan token
     serializer_class = UpdateUserSerializer
 
     def get_object(self):
@@ -152,32 +151,114 @@ class LogoutView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
             
 class ChangePasswordView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        request_body=ChangePasswordSerializer,
+        operation_description="Ganti password user",
+        responses={
+            200: openapi.Response('Password berhasil diganti'),
+            400: openapi.Response('Request invalid / password lama salah')
+        }
+    )
     def post(self, request):
-        user = request.user
-        old_password = request.data.get("old_password")
-        new_password = request.data.get("new_password")
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = request.user
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({"message": "Password berhasil diganti"}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
-        # Validasi old_password
-        if not user.check_password(old_password):
+class UserListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    # @swagger_auto_schema(
+    #     tags=["2. User Management"],
+    #     operation_description="Ambil semua data user.",
+    #     responses={200: UserListSerializer(many=True)}
+    # )
+    def get(self, request):
+        users = CustomUser.objects.all()
+        serializer = UserListSerializer(users, many=True)
+        return Response({"message": "Berhasil ambil data user", "data": serializer.data}, status=status.HTTP_200_OK)
+
+class UserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request, id):
+        try:
+            user = CustomUser.objects.get(id=id)
+            serializer = UserListSerializer(user)
             return Response({
-                "message": "Password lama salah.",
-                "code": 400
+                "message": "Data user ditemukan",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({
+                "message": "User tidak ditemukan"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+class UserCRUDView(APIView):
+    permission_classes = [IsAuthenticated] # autentikasi untuk tiap request menggunakan token
+    #permission_classes = [IsSuperUser] # autentikasi untuk yang bisa update data user adalah hanya superadmin
+    permission_classes = [CustomAdminOrReadOnly] # autentikasi untuk user lain hanya bisa read, tidak bisa create dan update.
+
+    def get(self, request):
+        users = CustomUser.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response({"message": "Berhasil ambil data user", "data": serializer.data}, status=status.HTTP_200_OK)
+    
+    def get(self, request, id=None):
+        try:
+            user = CustomUser.objects.get(id=id)
+            serializer = UserListSerializer(user)
+            return Response({
+                "message": "Data user ditemukan",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({
+                "message": "User tidak ditemukan"
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "message": "User berhasil ditambahkan",
+                "data": serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "message": "Gagal menambahkan user",
+                "errors": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validasi new_password tidak kosong
-        if not new_password:
+
+    def put(self, request, id):
+        try:
+            user = CustomUser.objects.get(id=id)
+            serializer = UserSerializer(user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    "message": "Data user berhasil diupdate",
+                    "data": serializer.data
+                }, status=status.HTTP_200_OK)
             return Response({
-                "message": "Password baru tidak boleh kosong.",
-                "code": 400
+                "message": "Gagal update user",
+                "errors": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-
-        # Ganti password
-        user.set_password(new_password)
-        user.save()
-
-        return Response({
-            "message": "Password berhasil diubah.",
-            "code": 200
-        }, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({
+                "message": "User tidak ditemukan"
+            }, status=status.HTTP_404_NOT_FOUND)
+    def delete(self, request, id=None):
+        try:
+            user = CustomUser.objects.get(id=id)
+            user.delete()
+            return Response({"message": "User berhasil dihapus"}, status=status.HTTP_200_OK)
+        except CustomUser.DoesNotExist:
+            return Response({"message": "User tidak ditemukan"}, status=status.HTTP_404_NOT_FOUND)
